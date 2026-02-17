@@ -89,14 +89,13 @@ void Ui::drawCameraOverlay() {
   SPI.beginTransaction(SpiCfg::TFT_SPI);
   bus_.tftSelect(true);
 
-  tft_.fillRect(0, 0, 160, 12, ST77XX_BLACK);
   tft_.setCursor(0, 0);
   tft_.setTextSize(1);
-  tft_.setTextColor(ST77XX_WHITE);
-  tft_.print(F("CAM "));
-  tft_.setTextColor(ST77XX_CYAN);
-  tft_.print(F("CLICK:shot "));
-  tft_.print(F("SELECT:home "));
+  tft_.setTextWrap(false);
+
+  tft_.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft_.setCursor(0, 2);
+  tft_.print(F("CLICK:shot SELECT:home   "));
 
   bus_.tftSelect(false);
   SPI.endTransaction();
@@ -131,7 +130,6 @@ void Ui::drawCameraOverlay() {
 void Ui::drawGallery(uint8_t sel) {
   clear();
 
-  // --- Build list (up to 10) ---
   char items[10][13];
   uint8_t count = 0;
 

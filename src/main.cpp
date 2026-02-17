@@ -47,64 +47,85 @@ static bool captureAndDisplayFrame() {
     cam.clearFifo();
     return false;
   }
+  // preview mode is OV2640_160x120, need to crop it to 128x120
+  constexpr uint16_t SRC_W = 160;
+  constexpr uint16_t SRC_H = 120;
+  constexpr uint16_t DST_W = 128;
+  constexpr uint16_t DST_H = 120;
 
-  constexpr uint16_t W = 160;
-  constexpr uint16_t H = 120;
-  constexpr uint16_t y0 = (128 - H) / 2;
+  // center vertically (128x128 display)
+  constexpr uint16_t y0 = (128 - DST_H) / 2;   // (128-120)/2 = 4
 
-  // clear bars
+  constexpr uint16_t SKIP_L = (SRC_W - DST_W) / 2; // 16
+  constexpr uint16_t SKIP_R = SRC_W - DST_W - SKIP_L; // 16
+
   bus.prepForTft();
   SPI.beginTransaction(SpiCfg::TFT_SPI);
   bus.tftSelect(true);
-  tft.fillRect(0, 0, 160, y0, ST77XX_BLACK);
-  tft.fillRect(0, y0 + H, 160, 128 - (y0 + H), ST77XX_BLACK);
+  tft.fillRect(0, 0, 128, y0, ST77XX_BLACK);
+  tft.fillRect(0, y0 + DST_H, 128, 128 - (y0 + DST_H), ST77XX_BLACK);
   bus.tftSelect(false);
   SPI.endTransaction();
 
-  uint16_t line[W];
+  uint16_t line[DST_W];
   uint32_t remaining = length;
 
-  // set window once
+  // Set frame window once (128x120)
   bus.prepForTft();
   SPI.beginTransaction(SpiCfg::TFT_SPI);
   bus.tftSelect(true);
-  tft.setAddrWindow(0, y0, W, H);
+  tft.setAddrWindow(0, y0, DST_W, DST_H);
   bus.tftSelect(false);
   SPI.endTransaction();
 
-  for (uint16_t y = 0; y < H; y++) {
-    // read scanline from CAM FIFO
+  for (uint16_t y = 0; y < SRC_H; y++) {
     bus.prepForCam();
     SPI.beginTransaction(SpiCfg::CAM_SPI);
     myCAM.CS_LOW();
     myCAM.set_fifo_burst();
 
-    for (uint16_t x = 0; x < W; x++) {
+    // discard left pixels
+    for (uint16_t x = 0; x < SKIP_L; x++) {
+      SPI.transfer(0x00);
+      SPI.transfer(0x00);
+      remaining = (remaining >= 2) ? (remaining - 2) : 0;
+    }
+
+    // read center pixels into line[]
+    for (uint16_t x = 0; x < DST_W; x++) {
       uint8_t hi = SPI.transfer(0x00);
       uint8_t lo = SPI.transfer(0x00);
       remaining = (remaining >= 2) ? (remaining - 2) : 0;
-      line[x] = (uint16_t(hi) << 8) | uint16_t(lo); // swap if needed
+      line[x] = (uint16_t(hi) << 8) | uint16_t(lo); // if colors look wrong, swap bytes
+    }
+
+    // discard right pixels
+    for (uint16_t x = 0; x < SKIP_R; x++) {
+      SPI.transfer(0x00);
+      SPI.transfer(0x00);
+      remaining = (remaining >= 2) ? (remaining - 2) : 0;
     }
 
     myCAM.CS_HIGH();
     SPI.endTransaction();
 
-    // write scanline to TFT
+    // Draw this cropped line to TFT at y0+y (DST_W pixels)
     bus.prepForTft();
     SPI.beginTransaction(SpiCfg::TFT_SPI);
+    bus.tftSelect(true);
     tft.startWrite();
-    tft.setAddrWindow(0, y0 + y, W, 1);
-    tft.writePixels(line, W, true);
+    tft.setAddrWindow(0, y0 + y, DST_W, 1);
+    tft.writePixels(line, DST_W, true);
     tft.endWrite();
+    bus.tftSelect(false);
     SPI.endTransaction();
 
-    if (remaining == 0) break;
+    if (remaining < 2) break;
   }
 
   cam.clearFifo();
   return true;
 }
-
 static bool captureAndSaveToSD() {
   ui.status(F("Capturing JPEG..."));
 
@@ -267,8 +288,7 @@ void loop() {
     if (buttons.select.pressed()) {
       enterView(homeSel == 0 ? View::VIEW_CAMERA : View::VIEW_GALLERY);
     }
-
-    return; // HOME handled
+    return;
   }
 
   if (view == View::VIEW_CAMERA) {
@@ -312,10 +332,8 @@ void loop() {
       }
     }
 #endif
-
-    return; // CAMERA handled
+    return; 
   }
-
   if (view == View::VIEW_GALLERY) {
     // back to home
     if (buttons.click.pressed()) {           
