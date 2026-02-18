@@ -35,6 +35,8 @@ static Storage storage(bus);
 static View view = View::VIEW_HOME;
 static uint8_t homeSel = 0;
 static uint16_t galSel = 0;
+static char galItems[10][13];
+static uint8_t galCount = 0;
 static uint16_t imgIndex = 0;
 
 static void enterView(View v);
@@ -217,8 +219,27 @@ bool captureAndSaveToSD() {
     return false;
   }
   ui.status(F("Saved OK"));
-  return true;
 }
+
+static void scanGallery() {
+  galCount = 0;
+  for (uint16_t i = 0; i < 1000 && galCount < 10; i++) {
+    char fn[13];
+    storage.makeFilename(fn, i);
+    bus.prepForSd();
+    SPI.beginTransaction(SpiCfg::SD_SPI);
+    bool ex = SD.exists(fn);
+    SPI.endTransaction();
+    if (ex) {
+      for (uint8_t k = 0; k < 13; k++) {
+        galItems[galCount][k] = fn[k];
+        if (fn[k] == '\0') break;
+      }
+      galCount++;
+    }
+  }
+}
+
 static void enterView(View v) {
   view = v;
 
@@ -233,9 +254,9 @@ static void enterView(View v) {
   }
 
   if (view == View::VIEW_GALLERY) {
-    // ui.status(F("Gallery"));
-    // delay(150);
-    ui.drawGallery(galSel);
+    galSel = 0;
+    scanGallery();
+    ui.drawGallery(galSel, galItems, galCount);
     return;
   }
 }
@@ -280,6 +301,19 @@ void setup() {
 void loop() {
   buttons.update();
 
+#if TEST_ALL
+  static uint32_t lastSwitch = 0;
+  static uint8_t phase = 0;
+
+  if (millis() - lastSwitch >= 5000) {
+    lastSwitch = millis();
+    phase = (phase + 1) % 3;
+
+    if (phase == 0) enterView(View::VIEW_HOME);
+    else if (phase == 1) enterView(View::VIEW_CAMERA);
+    else enterView(View::VIEW_GALLERY);
+  }
+#endif
 
   const bool clickEvt = buttons.click.pressed();
   const bool nextEvt  = buttons.next.pressed();
@@ -304,7 +338,6 @@ void loop() {
     }
     if (reqGallery) {
       reqHome = reqGallery = reqCapture = false;
-      galSel = 0;
       enterView(View::VIEW_GALLERY);
       return;
     }
@@ -313,7 +346,6 @@ void loop() {
       return;
     }
     if (nextEvt) {
-      galSel = 0;
       enterView(View::VIEW_GALLERY);
       return;
     }
@@ -341,12 +373,11 @@ void loop() {
       return;
     }
     if (nextEvt) {
-      galSel = (galSel + 1) % 10;
-      ui.drawGallery(galSel);
+      if (galCount > 0) galSel = (galSel + 1) % galCount;
+      ui.drawGallery(galSel, galItems, galCount);
     }
     if (selEvt) {
-      // ui.status(F("SELECT pressed"));
-      return;
+      ui.status(F("SELECT pressed"));
     }
     return;
   }

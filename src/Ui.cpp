@@ -1,10 +1,6 @@
 #include "Ui.h"
 #include "BoardConfig.h"
 #include <Adafruit_ST77xx.h>
-#include "Storage.h"
-
-extern Storage storage;
-
 void Ui::begin() {
   bus_.prepForTft();
   SPI.beginTransaction(SpiCfg::TFT_SPI);
@@ -37,6 +33,22 @@ void Ui::status(const __FlashStringHelper* l1, const __FlashStringHelper* l2) {
   tft_.setTextColor(ST77XX_WHITE);
   tft_.println(l1);
   if (l2) tft_.println(l2);
+
+  bus_.tftSelect(false);
+  SPI.endTransaction();
+}
+
+void Ui::showSaved(const char* fn) {
+  bus_.prepForTft();
+  SPI.beginTransaction(SpiCfg::TFT_SPI);
+  bus_.tftSelect(true);
+
+  tft_.fillRect(0, 32, 160, 12, ST77XX_BLACK);
+  tft_.setCursor(0, 32);
+  tft_.setTextSize(1);
+  tft_.setTextColor(ST77XX_CYAN);
+  tft_.print(F("Saved: "));
+  tft_.print(fn);
 
   bus_.tftSelect(false);
   SPI.endTransaction();
@@ -85,30 +97,34 @@ void Ui::drawCameraOverlay() {
   SPI.endTransaction();
 }
 
-void Ui::drawGallery(uint8_t sel) {
+// void Ui::drawGalleryHeader(uint16_t sel, uint16_t count) {
+//   clear();
+
+//   bus_.prepForTft();
+//   SPI.beginTransaction(SpiCfg::TFT_SPI);
+//   bus_.tftSelect(true);
+
+//   tft_.setCursor(45, 2);
+//   tft_.setTextSize(1);
+//   tft_.setTextColor(ST77XX_WHITE);
+//   tft_.println(F("Gallery"));
+
+//   tft_.setTextColor(ST77XX_CYAN);
+//   tft_.print(F(" SEL "));
+//   tft_.print(sel);
+//   tft_.print(F("/"));
+//   tft_.println(count);
+
+//   tft_.setTextColor(ST77XX_CYAN);
+//   tft_.println(F(" NEXT: scroll"));
+//   tft_.println(F(" CLICK: delete"));
+//   tft_.println(F("SEL: home\n"));
+
+//   bus_.tftSelect(false);
+//   SPI.endTransaction();
+// }
+void Ui::drawGallery(uint8_t sel, const char items[][13], uint8_t count) {
   clear();
-
-  char items[10][13];
-  uint8_t count = 0;
-
-  for (uint16_t i = 0; i < 1000 && count < 10; i++) {
-    char fn[13];
-    storage.makeFilename(fn, i);
-
-    bus_.prepForSd();
-    SPI.beginTransaction(SpiCfg::SD_SPI);
-    bool ex = SD.exists(fn);
-    SPI.endTransaction();
-
-    if (ex) {
-      // copy filename into items[count]
-      for (uint8_t k = 0; k < 13; k++) {
-        items[count][k] = fn[k];
-        if (fn[k] == '\0') break;
-      }
-      count++;
-    }
-  }
 
   if (count == 0) sel = 0;
   else if (sel >= count) sel = count - 1;
@@ -140,6 +156,17 @@ void Ui::drawGallery(uint8_t sel) {
   tft_.println(F("\n NEXT: move"));
   tft_.println(F(" SELECT: open"));
   tft_.println(F(" CLICK: home"));
+
+  bus_.tftSelect(false);
+  SPI.endTransaction();
+}
+void Ui::printLine(const char* s, uint16_t color) {
+  bus_.prepForTft();
+  SPI.beginTransaction(SpiCfg::TFT_SPI);
+  bus_.tftSelect(true);
+
+  tft_.setTextColor(color);
+  tft_.println(s);
 
   bus_.tftSelect(false);
   SPI.endTransaction();
