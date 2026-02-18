@@ -13,8 +13,8 @@ namespace Pins {
 
   // Buttons (wired to GND, INPUT_PULLUP)
   static constexpr uint8_t BTN_CLICK  = 2;
-  static constexpr uint8_t BTN_NEXT   = 3;
-  static constexpr uint8_t BTN_SELECT = 5;
+  static constexpr uint8_t BTN_NEXT   = 5;
+  static constexpr uint8_t BTN_SELECT = 3;
 }
 
 // SPI settings 

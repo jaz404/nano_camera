@@ -19,6 +19,7 @@ public:
 
   // Restored: actual FIFO burst -> SD file write (JPEG SOI/EOI)
   bool writeFifoJpegToFile(File& img, uint32_t fifo_len);
+  void cameraDeselectHard(); 
 
   ArduCAM& raw() { return cam_; }
 

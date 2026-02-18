@@ -42,22 +42,6 @@ void Ui::status(const __FlashStringHelper* l1, const __FlashStringHelper* l2) {
   SPI.endTransaction();
 }
 
-void Ui::showSaved(const char* fn) {
-  bus_.prepForTft();
-  SPI.beginTransaction(SpiCfg::TFT_SPI);
-  bus_.tftSelect(true);
-
-  tft_.fillRect(0, 32, 160, 12, ST77XX_BLACK);
-  tft_.setCursor(0, 32);
-  tft_.setTextSize(1);
-  tft_.setTextColor(ST77XX_CYAN);
-  tft_.print(F("Saved: "));
-  tft_.print(fn);
-
-  bus_.tftSelect(false);
-  SPI.endTransaction();
-}
-
 void Ui::drawHome(uint8_t sel) {
   clear();
 
@@ -101,32 +85,6 @@ void Ui::drawCameraOverlay() {
   SPI.endTransaction();
 }
 
-// void Ui::drawGalleryHeader(uint16_t sel, uint16_t count) {
-//   clear();
-
-//   bus_.prepForTft();
-//   SPI.beginTransaction(SpiCfg::TFT_SPI);
-//   bus_.tftSelect(true);
-
-//   tft_.setCursor(45, 2);
-//   tft_.setTextSize(1);
-//   tft_.setTextColor(ST77XX_WHITE);
-//   tft_.println(F("Gallery"));
-
-//   tft_.setTextColor(ST77XX_CYAN);
-//   tft_.print(F(" SEL "));
-//   tft_.print(sel);
-//   tft_.print(F("/"));
-//   tft_.println(count);
-
-//   tft_.setTextColor(ST77XX_CYAN);
-//   tft_.println(F(" NEXT: scroll"));
-//   tft_.println(F(" CLICK: delete"));
-//   tft_.println(F("SEL: home\n"));
-
-//   bus_.tftSelect(false);
-//   SPI.endTransaction();
-// }
 void Ui::drawGallery(uint8_t sel) {
   clear();
 
@@ -182,17 +140,6 @@ void Ui::drawGallery(uint8_t sel) {
   tft_.println(F("\n NEXT: move"));
   tft_.println(F(" SELECT: open"));
   tft_.println(F(" CLICK: home"));
-
-  bus_.tftSelect(false);
-  SPI.endTransaction();
-}
-void Ui::printLine(const char* s, uint16_t color) {
-  bus_.prepForTft();
-  SPI.beginTransaction(SpiCfg::TFT_SPI);
-  bus_.tftSelect(true);
-
-  tft_.setTextColor(color);
-  tft_.println(s);
 
   bus_.tftSelect(false);
   SPI.endTransaction();

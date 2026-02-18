@@ -2,6 +2,7 @@
 #include "BoardConfig.h"
 #include "Debug.h"
 #include "memorysaver.h"
+#include "SpiBus.h"
 
 bool Camera::probeSpi() {
   bus_.prepForCam();
@@ -43,8 +44,17 @@ void Camera::modeJpeg() {
   SPI.endTransaction();
 }
 
+
+void Camera::cameraDeselectHard() {
+  cam_.CS_HIGH();                   
+  digitalWrite(Pins::CAM_CS, HIGH);  
+}
+
 bool Camera::startCapture(uint32_t timeoutMs) {
-  bus_.prepForCam();
+  bus_.deselectAll();
+  cameraDeselectHard();
+  
+
   SPI.beginTransaction(SpiCfg::CAM_SPI);
 
   cam_.flush_fifo();
@@ -55,9 +65,11 @@ bool Camera::startCapture(uint32_t timeoutMs) {
   cam_.start_capture();
 
   delay(5);
-  if (!cam_.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK)) cam_.start_capture();
+  if (!cam_.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK)) {
+    cam_.start_capture();
+  }
 
-  const uint32_t t0 = millis();
+  unsigned long t0 = millis();
   while (!cam_.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK)) {
     if (millis() - t0 > timeoutMs) {
       SPI.endTransaction();

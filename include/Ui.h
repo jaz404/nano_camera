@@ -14,14 +14,10 @@ public:
 
   void clear();
   void status(const __FlashStringHelper* l1, const __FlashStringHelper* l2 = nullptr);
-  void showSaved(const char* fn);
-
   void drawHome(uint8_t sel);
   void drawCameraOverlay();
   // void drawGalleryHeader(uint16_t sel, uint16_t count);
   void drawGallery(uint8_t sel);
-  // used for listing many names (Gallery)
-  void printLine(const char* s, uint16_t color);
 
 private:
   SpiBus& bus_;

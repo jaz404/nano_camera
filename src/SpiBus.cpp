@@ -9,7 +9,6 @@ void SpiBus::begin() {
   pinMode(Pins::TFT_RST, OUTPUT);
   setCsHigh_();
 }
-
 void SpiBus::setCsHigh_() {
   digitalWrite(Pins::CAM_CS, HIGH);
   digitalWrite(Pins::SD_CS, HIGH);

@@ -39,6 +39,10 @@ static uint16_t imgIndex = 0;
 
 static void enterView(View v);
 
+static volatile bool reqHome = false;
+static volatile bool reqGallery = false;
+static volatile bool reqCapture = false;
+
 static bool captureAndDisplayFrame() {
   if (!cam.startCapture(8000)) return false;
 
@@ -119,6 +123,13 @@ static bool captureAndDisplayFrame() {
     tft.endWrite();
     bus.tftSelect(false);
     SPI.endTransaction();
+    if ((y & 0x03) == 0) {
+      buttons.update();
+      if (buttons.select.pressed()) reqHome = true;
+      if (buttons.next.pressed())   reqGallery = true;
+      if (buttons.click.pressed())  reqCapture = true;
+      if (reqHome || reqGallery || reqCapture) break;
+    }
 
     if (remaining < 2) break;
   }
@@ -126,70 +137,88 @@ static bool captureAndDisplayFrame() {
   cam.clearFifo();
   return true;
 }
-static bool captureAndSaveToSD() {
-  ui.status(F("Capturing JPEG..."));
+static bool forceSDReinit() {
+  bus.deselectAll();
+  cam.cameraDeselectHard();
+  bus.spiSoftReset();
+  SPI.beginTransaction(SpiCfg::SD_SPI);
+  bool ok = SD.begin(Pins::SD_CS);
+  SPI.endTransaction();
+  #if DEBUG
+  Serial.print(F("SD.begin:")); Serial.println(ok);
+  #endif
+  return ok;
+}
+
+bool captureAndSaveToSD() {
 
   if (!cam.startCapture(8000)) {
-    ui.status(F("Capture timeout"));
-    cam.clearFifo();
+    ui.status(F("Timeout"));
+    SPI.beginTransaction(SpiCfg::CAM_SPI);
+    myCAM.clear_fifo_flag();
+    SPI.endTransaction();
     return false;
   }
 
-  uint32_t len = cam.fifoLength();
-#if DEBUG
-  Serial.print(F("FIFO length: ")); Serial.println(len);
-#endif
+  SPI.beginTransaction(SpiCfg::CAM_SPI);
+  uint32_t length = myCAM.read_fifo_length();
+  SPI.endTransaction();
 
-  if (len == 0 || len >= MAX_FIFO_SIZE) {
-    ui.status(F("Bad FIFO length"));
-    cam.clearFifo();
+  if (length == 0 || length >= MAX_FIFO_SIZE) {
+    ui.status(F("Bad FIFO"));
+    SPI.beginTransaction(SpiCfg::CAM_SPI);
+    myCAM.clear_fifo_flag();
+    SPI.endTransaction();
     return false;
   }
 
-  char filename[11];
+  char filename[13];
   storage.makeFilename(filename, imgIndex);
 
-  if (!storage.rebegin()) {
-    ui.status(F("SD reinit failed"));
-    cam.clearFifo();
+  if (!forceSDReinit()) {
+    ui.status(F("SD reinit!"));
+    SPI.beginTransaction(SpiCfg::CAM_SPI);
+    myCAM.clear_fifo_flag();
+    SPI.endTransaction();
     return false;
   }
 
-  bus.prepForSd();
+  bus.deselectAll();
+  cam.cameraDeselectHard();
+  bus.spiSoftReset();
+
   SPI.beginTransaction(SpiCfg::SD_SPI);
   File img = SD.open(filename, FILE_WRITE);
   SPI.endTransaction();
-
+  #if DEBUG
+  Serial.print(F("open:")); Serial.println(img ? 1 : 0);
+  #endif
   if (!img) {
     ui.status(F("SD open failed"));
-    cam.clearFifo();
+    SPI.beginTransaction(SpiCfg::CAM_SPI);
+    myCAM.clear_fifo_flag();
+    SPI.endTransaction();
     return false;
   }
 
-#if DEBUG
-  Serial.print(F("Saving to SD as ")); Serial.println(filename);
-#endif
+  bool ok = cam.writeFifoJpegToFile(img, length);
 
-  bool ok = cam.writeFifoJpegToFile(img, len);
-
-  bus.prepForSd();
   SPI.beginTransaction(SpiCfg::SD_SPI);
   img.flush();
   img.close();
   SPI.endTransaction();
 
-  cam.clearFifo();
+  SPI.beginTransaction(SpiCfg::CAM_SPI);
+  myCAM.clear_fifo_flag();
+  SPI.endTransaction();
 
   if (!ok) {
     ui.status(F("JPEG invalid"));
     return false;
   }
-
   ui.status(F("Saved OK"));
-  ui.showSaved(filename);
   return true;
 }
-
 static void enterView(View v) {
   view = v;
 
@@ -199,7 +228,6 @@ static void enterView(View v) {
   }
 
   if (view == View::VIEW_CAMERA) {
-    ui.status(F("Camera"));
     ui.drawCameraOverlay();
     return;
   }
@@ -215,13 +243,10 @@ static void enterView(View v) {
 void setup() {
   pinMode(10, OUTPUT);
   digitalWrite(10, HIGH);
-
-#if DEBUG
+  #if DEBUG
   Serial.begin(115200);
   delay(300);
-  Serial.println(F("Boot: ArduCAM + SD + TFT"));
-#endif
-
+  #endif
   Wire.begin();
   SPI.begin();
 
@@ -235,7 +260,6 @@ void setup() {
     ui.status(F("SD init FAILED"));
     while (1) {}
   }
-  ui.status(F("SD init OK"));
 
   imgIndex = storage.findNextImgIndex();
 
@@ -243,117 +267,88 @@ void setup() {
     ui.status(F("CAM SPI ERROR"));
     delay(500);
   }
-  ui.status(F("CAM SPI OK"));
 
   while (!cam.probeSensor()) {
     ui.status(F("OV2640 not found"));
     delay(500);
   }
-  ui.status(F("OV2640 detected"));
 
   cam.modePreview();
   enterView(View::VIEW_HOME);
-
-  imgIndex = storage.findNextImgIndex();
-
-#if DEBUG
-  Serial.println(F("Camera ready (preview). Press 's' to save JPEG."));
-#endif
 }
 
 void loop() {
   buttons.update();
 
 
-#if TEST_ALL
-  static uint32_t lastSwitch = 0;
-  static uint8_t phase = 0;
-
-  if (millis() - lastSwitch >= 5000) {
-    lastSwitch = millis();
-    phase = (phase + 1) % 3;
-
-    if (phase == 0) enterView(View::VIEW_HOME);
-    else if (phase == 1) enterView(View::VIEW_CAMERA);
-    else enterView(View::VIEW_GALLERY);
-  }
-#endif
+  const bool clickEvt = buttons.click.pressed();
+  const bool nextEvt  = buttons.next.pressed();
+  const bool selEvt   = buttons.select.pressed();
 
   if (view == View::VIEW_HOME) {
-    if (buttons.next.pressed()) {
-      homeSel = (homeSel + 1) & 1;     
+    if (nextEvt) {
+      homeSel = (homeSel + 1) & 1;
       ui.drawHome(homeSel);
     }
-
-    if (buttons.select.pressed()) {
+    if (selEvt) {
       enterView(homeSel == 0 ? View::VIEW_CAMERA : View::VIEW_GALLERY);
     }
     return;
   }
 
   if (view == View::VIEW_CAMERA) {
-    static uint32_t lastPreview = 0;
+    if (reqHome) {
+      reqHome = reqGallery = reqCapture = false;
+      enterView(View::VIEW_HOME);
+      return;
+    }
+    if (reqGallery) {
+      reqHome = reqGallery = reqCapture = false;
+      galSel = 0;
+      enterView(View::VIEW_GALLERY);
+      return;
+    }
+    if (selEvt) {
+      enterView(View::VIEW_HOME);
+      return;
+    }
+    if (nextEvt) {
+      galSel = 0;
+      enterView(View::VIEW_GALLERY);
+      return;
+    }
+    if (clickEvt || reqCapture) {
+      reqCapture = false;
+      ui.status(F("Saving JPEG..."));
+      cam.modeJpeg();
+      if (captureAndSaveToSD()) imgIndex++;
+      cam.modePreview();
+      ui.drawCameraOverlay();
+      return;
+    }
 
-    // preview refresh
+    static uint32_t lastPreview = 0;
     if (millis() - lastPreview >= 100) {
       lastPreview = millis();
       captureAndDisplayFrame();
       ui.drawCameraOverlay();
     }
-
-    // take photo
-    if (buttons.click.pressed()) {
-      ui.status(F("Saving JPEG..."));
-      cam.modeJpeg();
-      if (captureAndSaveToSD()) imgIndex++;
-      cam.modePreview();
-      ui.status(F("Preview resumed"));
-      ui.drawCameraOverlay();
-    }
-
-    // navigation
-    if (buttons.select.pressed()) {         
-      enterView(View::VIEW_HOME);
-    } else if (buttons.next.pressed()) {    
-      galSel = 0;
-      enterView(View::VIEW_GALLERY);
-    }
-
-#if DEBUG
-    if (Serial.available()) {
-      char c = (char)Serial.read();
-      if (c == 's' || c == 'S') {
-        ui.status(F("Saving JPEG..."));
-        cam.modeJpeg();
-        if (captureAndSaveToSD()) imgIndex++;
-        cam.modePreview();
-        ui.status(F("Preview resumed"));
-        ui.drawCameraOverlay();
-      }
-    }
-#endif
-    return; 
+    return;
   }
   if (view == View::VIEW_GALLERY) {
-    // back to home
-    if (buttons.click.pressed()) {           
+    if (clickEvt) {
       enterView(View::VIEW_HOME);
       return;
     }
-
-    // move selection
-    if (buttons.next.pressed()) {
-      galSel = (galSel + 1) % 10;            
+    if (nextEvt) {
+      galSel = (galSel + 1) % 10;
       ui.drawGallery(galSel);
     }
-
-    // select action 
-    if (buttons.select.pressed()) {
-      ui.status(F("SELECT pressed"));
+    if (selEvt) {
+      // ui.status(F("SELECT pressed"));
+      return;
     }
-
-    return; 
+    return;
   }
-
   enterView(View::VIEW_HOME);
 }
